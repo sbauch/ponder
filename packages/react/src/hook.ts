@@ -33,7 +33,7 @@ export function usePonderQuery<result>(
   useEffect(() => {
     const { unsubscribe } = client.live(
       () => Promise.resolve(),
-      () => queryClient.invalidateQueries({ queryKey: queryOptions.queryKey }),
+      () => queryClient.refetchQueries({ queryKey: queryOptions.queryKey, stale: true }),
     );
     return unsubscribe;
   }, queryOptions.queryKey);
