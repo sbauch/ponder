@@ -1,5 +1,168 @@
 # @ponder/react
 
+## 0.9.28
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.28
+
+## 0.9.27
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.27
+
+## 0.9.26
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.26
+
+## 0.9.25
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.25
+
+## 0.9.24
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.24
+
+## 0.9.23
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.23
+
+## 0.9.22
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.22
+
+## 0.9.21
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.21
+
+## 0.9.20
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.20
+
+## 0.9.19
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.19
+
+## 0.9.18
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.18
+
+## 0.9.17
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.17
+
+## 0.9.16
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.16
+
+## 0.9.15
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.15
+
+## 0.9.14
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.14
+
+## 0.9.13
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.13
+
+## 0.9.12
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.12
+
+## 0.9.11
+
+### Patch Changes
+
+- [#1509](https://github.com/ponder-sh/ponder/pull/1509) [`e267f7e29d0996384590f898553e323499a8b616`](https://github.com/ponder-sh/ponder/commit/e267f7e29d0996384590f898553e323499a8b616) Thanks [@kyscott18](https://github.com/kyscott18)! - Fixed some (not all) type compatibility issues when using `@ponder/client` and `@ponder/react`.
+
+- Updated dependencies [[`e267f7e29d0996384590f898553e323499a8b616`](https://github.com/ponder-sh/ponder/commit/e267f7e29d0996384590f898553e323499a8b616)]:
+  - @ponder/client@0.9.11
+
+## 0.9.10
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.10
+
+## 0.9.9
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.9
+
+## 0.9.8
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.8
+
+## 0.9.7
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.7
+
+## 0.9.6
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @ponder/client@0.9.6
+
 ## 0.9.5
 
 ### Patch Changes

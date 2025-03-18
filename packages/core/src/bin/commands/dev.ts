@@ -9,8 +9,8 @@ import { createShutdown } from "@/internal/shutdown.js";
 import { buildPayload, createTelemetry } from "@/internal/telemetry.js";
 import type { IndexingBuild } from "@/internal/types.js";
 import { createUi } from "@/ui/index.js";
+import { createQueue } from "@/utils/queue.js";
 import { type Result, mergeResults } from "@/utils/result.js";
-import { createQueue } from "@ponder/common";
 import type { CliOptions } from "../ponder.js";
 import { createExit } from "../utils/exit.js";
 import { run } from "../utils/run.js";
@@ -55,6 +55,18 @@ export async function dev({ cliOptions }: { cliOptions: CliOptions }) {
   const telemetry = createTelemetry({ options, logger, shutdown });
   const common = { options, logger, metrics, telemetry };
 
+  if (options.version) {
+    metrics.ponder_version_info.set(
+      {
+        version: options.version.version,
+        major: options.version.major,
+        minor: options.version.minor,
+        patch: options.version.patch,
+      },
+      1,
+    );
+  }
+
   const build = await createBuild({
     common: { ...common, shutdown },
     cliOptions,
@@ -65,7 +77,9 @@ export async function dev({ cliOptions }: { cliOptions: CliOptions }) {
     await apiShutdown.kill();
   });
 
-  createUi({ common: { ...common, shutdown } });
+  if (cliOptions.disableUi !== true) {
+    createUi({ common: { ...common, shutdown } });
+  }
 
   const exit = createExit({ common: { ...common, shutdown } });
 
@@ -204,6 +218,14 @@ export async function dev({ cliOptions }: { cliOptions: CliOptions }) {
         }
 
         metrics.resetApiMetrics();
+        metrics.ponder_settings_info.set(
+          {
+            ordering: preBuild.ordering,
+            database: preBuild.databaseConfig.kind,
+            command: cliOptions.command,
+          },
+          1,
+        );
 
         runServer({
           common: { ...common, shutdown: apiShutdown },

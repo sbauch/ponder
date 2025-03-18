@@ -14,7 +14,7 @@ import { start } from "./commands/start.js";
 dotenv.config({ path: ".env.local" });
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const packageJsonPath = resolve(__dirname, "../../package.json");
+const packageJsonPath = resolve(__dirname, "../../../package.json");
 const packageJson = JSON.parse(
   readFileSync(packageJsonPath, { encoding: "utf8" }),
 );
@@ -57,6 +57,7 @@ const ponder = new Command("ponder")
 
 type GlobalOptions = {
   command: "dev" | "start" | "serve" | "codegen";
+  version: string;
 } & ReturnType<typeof ponder.opts>;
 
 const devCommand = new Command("dev")
@@ -71,11 +72,13 @@ const devCommand = new Command("dev")
     "-H, --hostname <HOSTNAME>",
     'Hostname for the web server (default: "0.0.0.0" or "::")',
   )
+  .option("--disable-ui", "Disable the terminal UI")
   .showHelpAfterError()
   .action(async (_, command) => {
     const cliOptions = {
       ...command.optsWithGlobals(),
       command: command.name(),
+      version: packageJson.version,
     } as GlobalOptions & ReturnType<typeof command.opts>;
     await dev({ cliOptions });
   });
@@ -93,6 +96,7 @@ const startCommand = new Command("start")
     const cliOptions = {
       ...command.optsWithGlobals(),
       command: command.name(),
+      version: packageJson.version,
     } as GlobalOptions & ReturnType<typeof command.opts>;
     await start({ cliOptions });
   });
@@ -110,6 +114,7 @@ const serveCommand = new Command("serve")
     const cliOptions = {
       ...command.optsWithGlobals(),
       command: command.name(),
+      version: packageJson.version,
     } as GlobalOptions & ReturnType<typeof command.opts>;
     await serve({ cliOptions });
   });
@@ -123,6 +128,7 @@ const listCommand = new Command("list")
     const cliOptions = {
       ...command.optsWithGlobals(),
       command: command.name(),
+      version: packageJson.version,
     } as GlobalOptions & ReturnType<typeof command.opts>;
     await list({ cliOptions });
   });
@@ -134,6 +140,7 @@ const codegenCommand = new Command("codegen")
     const cliOptions = {
       ...command.optsWithGlobals(),
       command: command.name(),
+      version: packageJson.version,
     } as GlobalOptions & ReturnType<typeof command.opts>;
     await codegen({ cliOptions });
   });

@@ -32,10 +32,7 @@ import {
 } from "@/utils/checkpoint.js";
 import { estimate } from "@/utils/estimate.js";
 import { formatPercentage } from "@/utils/format.js";
-import {
-  bufferAsyncGenerator,
-  mergeAsyncGenerators,
-} from "@/utils/generators.js";
+import { bufferAsyncGenerator } from "@/utils/generators.js";
 import {
   type Interval,
   intervalDifference,
@@ -263,17 +260,8 @@ export const createSync = async (params: {
 
   const updateHistoricalStatus = ({
     events,
-    checkpoint,
     network,
-  }: { events: Event[]; checkpoint: string; network: Network }) => {
-    if (Number(decodeCheckpoint(checkpoint).chainId) === network.chainId) {
-      status[network.name]!.block = {
-        timestamp: decodeCheckpoint(checkpoint).blockTimestamp,
-        number: Number(decodeCheckpoint(checkpoint).blockNumber),
-      };
-      return;
-    }
-
+  }: { events: Event[]; network: Network }) => {
     let i = events.length - 1;
     while (i >= 0) {
       const event = events[i]!;
@@ -326,6 +314,22 @@ export const createSync = async (params: {
           ({ filter }) => filter.chainId === network.chainId,
         );
 
+        async function* decodeEventGenerator(
+          eventGenerator: AsyncGenerator<{
+            events: RawEvent[];
+            checkpoint: string;
+          }>,
+        ) {
+          for await (const { events, checkpoint } of eventGenerator) {
+            const decodedEvents = decodeEvents(params.common, sources, events);
+            params.common.logger.debug({
+              service: "app",
+              msg: `Decoded ${decodedEvents.length} '${network.name}' events`,
+            });
+            yield { events: decodedEvents, checkpoint };
+          }
+        }
+
         const localSyncGenerator = getLocalSyncGenerator({
           common: params.common,
           network,
@@ -350,55 +354,35 @@ export const createSync = async (params: {
           ),
         });
 
-        async function* decodeEventGenerator() {
-          for await (const { events, checkpoint } of localEventGenerator) {
-            const decodedEvents = decodeEvents(params.common, sources, events);
-            params.common.logger.debug({
-              service: "app",
-              msg: `Decoded ${decodedEvents.length} '${network.name}' events`,
-            });
-            yield { events: decodedEvents, checkpoint };
-          }
-        }
-
-        return bufferAsyncGenerator(decodeEventGenerator(), 1);
+        return bufferAsyncGenerator(
+          decodeEventGenerator(localEventGenerator),
+          1,
+        );
       },
     );
 
-    const mergeAsync =
-      params.ordering === "multichain"
-        ? mergeAsyncGenerators
-        : mergeAsyncGeneratorsWithEventOrder;
-
-    for await (const { events, checkpoint } of mergeAsync(eventGenerators)) {
-      if (params.ordering === "multichain") {
-        const network = params.indexingBuild.networks.find(
-          (network) =>
-            network.chainId === Number(decodeCheckpoint(checkpoint).chainId),
-        )!;
-        params.common.logger.debug({
-          service: "sync",
-          msg: `Sequenced ${events.length} '${network.name}' events for timestamp range [${decodeCheckpoint(cursor).blockTimestamp}, ${decodeCheckpoint(checkpoint).blockTimestamp}]`,
-        });
-      } else {
-        params.common.logger.debug({
-          service: "sync",
-          msg: `Sequenced ${events.length} events for timestamp range [${decodeCheckpoint(cursor).blockTimestamp}, ${decodeCheckpoint(checkpoint).blockTimestamp}]`,
-        });
-      }
+    for await (const {
+      events,
+      checkpoint,
+    } of mergeAsyncGeneratorsWithEventOrder(eventGenerators)) {
+      params.common.logger.debug({
+        service: "sync",
+        msg: `Sequenced ${events.length} events for timestamp range [${decodeCheckpoint(cursor).blockTimestamp}, ${decodeCheckpoint(checkpoint).blockTimestamp}]`,
+      });
 
       for (const network of params.indexingBuild.networks) {
-        updateHistoricalStatus({ events, checkpoint, network });
+        updateHistoricalStatus({ events, network });
       }
+
       yield events;
       cursor = checkpoint;
     }
   }
 
   /** Events that have been executed but not finalized. */
-  let executedEvents: RawEvent[] = [];
+  let executedEvents: Event[] = [];
   /** Events that have not been executed. */
-  let pendingEvents: RawEvent[] = [];
+  let pendingEvents: Event[] = [];
 
   const realtimeMutex = createMutex();
 
@@ -428,7 +412,7 @@ export const createSync = async (params: {
     switch (event.type) {
       case "block": {
         const events = buildEvents({
-          sources: params.indexingBuild.sources,
+          sources,
           chainId: network.chainId,
           blockWithEventData: event,
           finalizedChildAddresses: realtimeSync.finalizedChildAddresses,
@@ -438,6 +422,12 @@ export const createSync = async (params: {
         params.common.logger.debug({
           service: "sync",
           msg: `Extracted ${events.length} '${network.name}' events for block ${hexToNumber(event.block.number)}`,
+        });
+
+        const decodedEvents = decodeEvents(params.common, sources, events);
+        params.common.logger.debug({
+          service: "sync",
+          msg: `Decoded ${decodedEvents.length} '${network.name}' events for block ${hexToNumber(event.block.number)}`,
         });
 
         if (params.ordering === "multichain") {
@@ -452,24 +442,13 @@ export const createSync = async (params: {
             number: hexToNumber(event.block.number),
           };
 
-          const readyEvents = events.concat(pendingEvents);
+          const readyEvents = decodedEvents.concat(pendingEvents);
           pendingEvents = [];
           executedEvents = executedEvents.concat(readyEvents);
 
-          const decodedEvents = decodeEvents(
-            params.common,
-            sources,
-            readyEvents,
-          );
-
           params.common.logger.debug({
             service: "sync",
-            msg: `Decoded ${decodedEvents.length} '${network.name}' events for block ${hexToNumber(event.block.number)}`,
-          });
-
-          params.common.logger.debug({
-            service: "sync",
-            msg: `Sequenced ${decodedEvents.length} '${network.name}' events for block ${hexToNumber(event.block.number)}`,
+            msg: `Sequenced ${readyEvents.length} '${network.name}' events for block ${hexToNumber(event.block.number)}`,
           });
 
           params
@@ -477,7 +456,7 @@ export const createSync = async (params: {
               type: "block",
               checkpoint,
               status: structuredClone(status),
-              events: decodedEvents.sort((a, b) =>
+              events: readyEvents.sort((a, b) =>
                 a.checkpoint < b.checkpoint ? -1 : 1,
               ),
               network,
@@ -513,27 +492,16 @@ export const createSync = async (params: {
             // Move ready events from pending to executed
 
             const readyEvents = pendingEvents
-              .concat(events)
+              .concat(decodedEvents)
               .filter(({ checkpoint }) => checkpoint < to);
             pendingEvents = pendingEvents
-              .concat(events)
+              .concat(decodedEvents)
               .filter(({ checkpoint }) => checkpoint > to);
             executedEvents = executedEvents.concat(readyEvents);
 
-            const decodedEvents = decodeEvents(
-              params.common,
-              sources,
-              readyEvents,
-            );
-
             params.common.logger.debug({
               service: "sync",
-              msg: `Decoded ${decodedEvents.length} '${network.name}' events for block ${hexToNumber(event.block.number)}`,
-            });
-
-            params.common.logger.debug({
-              service: "sync",
-              msg: `Sequenced ${decodedEvents.length} '${network.name}' events for timestamp range [${decodeCheckpoint(from).blockTimestamp}, ${decodeCheckpoint(to).blockTimestamp}]`,
+              msg: `Sequenced ${readyEvents.length} events for timestamp range [${decodeCheckpoint(from).blockTimestamp}, ${decodeCheckpoint(to).blockTimestamp}]`,
             });
 
             params
@@ -541,7 +509,7 @@ export const createSync = async (params: {
                 type: "block",
                 checkpoint: to,
                 status: structuredClone(status),
-                events: decodedEvents.sort((a, b) =>
+                events: readyEvents.sort((a, b) =>
                   a.checkpoint < b.checkpoint ? -1 : 1,
                 ),
                 network,
@@ -564,7 +532,7 @@ export const createSync = async (params: {
                 }
               });
           } else {
-            pendingEvents = pendingEvents.concat(events);
+            pendingEvents = pendingEvents.concat(decodedEvents);
           }
         }
 
@@ -608,7 +576,7 @@ export const createSync = async (params: {
 
         let reorgedEvents = 0;
 
-        const isReorgedEvent = ({ chainId, block }: RawEvent) => {
+        const isReorgedEvent = ({ chainId, event: { block } }: Event) => {
           if (
             chainId === network.chainId &&
             Number(block.number) > hexToNumber(event.block.number)
@@ -671,11 +639,7 @@ export const createSync = async (params: {
           });
 
           if (to < from) {
-            params.onRealtimeEvent({
-              type: "reorg",
-              checkpoint: to,
-              network,
-            });
+            params.onRealtimeEvent({ type: "reorg", checkpoint: to, network });
           }
         }
 
@@ -802,35 +766,24 @@ export const createSync = async (params: {
     status[network.name] = { block: null, ready: false };
   }
 
-  if (params.ordering === "multichain") {
-    for (const network of params.indexingBuild.networks) {
-      seconds[network.name] = {
-        start: decodeCheckpoint(
-          getMultichainCheckpoint({ tag: "start", network })!,
-        ).blockTimestamp,
-        end: decodeCheckpoint(
-          min(
-            getOmnichainCheckpoint({ tag: "end" }),
-            getOmnichainCheckpoint({ tag: "finalized" }),
-          ),
-        ).blockTimestamp,
-        cached: decodeCheckpoint(params.initialCheckpoint).blockTimestamp,
-      };
-    }
-  } else {
-    for (const network of params.indexingBuild.networks) {
-      seconds[network.name] = {
-        start: decodeCheckpoint(getOmnichainCheckpoint({ tag: "start" })!)
-          .blockTimestamp,
-        end: decodeCheckpoint(
-          min(
-            getOmnichainCheckpoint({ tag: "end" }),
-            getOmnichainCheckpoint({ tag: "finalized" }),
-          ),
-        ).blockTimestamp,
-        cached: decodeCheckpoint(params.initialCheckpoint).blockTimestamp,
-      };
-    }
+  for (const network of params.indexingBuild.networks) {
+    seconds[network.name] = {
+      start: decodeCheckpoint(getOmnichainCheckpoint({ tag: "start" })!)
+        .blockTimestamp,
+      end: decodeCheckpoint(
+        min(
+          getOmnichainCheckpoint({ tag: "end" }),
+          getOmnichainCheckpoint({ tag: "finalized" }),
+        ),
+      ).blockTimestamp,
+      cached: decodeCheckpoint(
+        min(
+          getOmnichainCheckpoint({ tag: "end" }),
+          getOmnichainCheckpoint({ tag: "finalized" }),
+          params.initialCheckpoint,
+        ),
+      ).blockTimestamp,
+    };
   }
 
   return {
@@ -839,9 +792,10 @@ export const createSync = async (params: {
       for (const network of params.indexingBuild.networks) {
         const { syncProgress, realtimeSync } = perNetworkSync.get(network)!;
 
-        const filters = params.indexingBuild.sources
-          .filter(({ filter }) => filter.chainId === network.chainId)
-          .map(({ filter }) => filter);
+        const sources = params.indexingBuild.sources.filter(
+          ({ filter }) => filter.chainId === network.chainId,
+        );
+        const filters = sources.map(({ filter }) => filter);
         status[network.name]!.block = {
           number: hexToNumber(syncProgress.current!.number),
           timestamp: hexToNumber(syncProgress.current!.timestamp),
@@ -873,12 +827,18 @@ export const createSync = async (params: {
             to,
           });
 
+          const decodedEvents = decodeEvents(
+            params.common,
+            sources,
+            events.events,
+          );
+
           params.common.logger.debug({
             service: "sync",
-            msg: `Extracted and scheduled ${events.events.length} '${network.name}' events`,
+            msg: `Extracted, decoded and scheduled ${decodedEvents.length} '${network.name}' events`,
           });
 
-          pendingEvents = pendingEvents.concat(events.events);
+          pendingEvents = pendingEvents.concat(decodedEvents);
         }
 
         if (isSyncEnd(syncProgress)) {
@@ -1194,7 +1154,7 @@ export async function* getLocalEventGenerator(params: {
           maxIncrease: 1.08,
         });
 
-        params.common.logger.debug({
+        params.common.logger.trace({
           service: "sync",
           msg: `Updated '${params.network.name}' extract query estimate to ${estimateSeconds} seconds`,
         });
@@ -1404,7 +1364,7 @@ export async function* getLocalSyncGenerator({
         100_000,
       );
 
-      common.logger.debug({
+      common.logger.trace({
         service: "sync",
         msg: `Updated '${network.name}' historical sync estimate to ${estimateRange} blocks`,
       });

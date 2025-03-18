@@ -1,5 +1,6 @@
+import type { Database } from "@/database/index.js";
 import type { OnchainTable } from "@/drizzle/onchain.js";
-import type { MetadataStore } from "@/indexing-store/metadata.js";
+import { normalizeColumn } from "@/indexing-store/utils.js";
 import type { Schema } from "@/internal/types.js";
 import type { Drizzle, ReadonlyDrizzle } from "@/types/db.js";
 import { never } from "@/utils/never.js";
@@ -25,6 +26,8 @@ import {
   gte,
   inArray,
   is,
+  isNotNull,
+  isNull,
   like,
   lt,
   lte,
@@ -65,7 +68,7 @@ import { GraphQLJSON } from "./json.js";
 type Parent = Record<string, any>;
 type Context = {
   getDataLoader: ReturnType<typeof buildDataLoaderCache>;
-  metadataStore: MetadataStore;
+  getStatus: Database["getStatus"];
   drizzle: Drizzle<{ [key: string]: OnchainTable }>;
 };
 
@@ -395,7 +398,7 @@ export function buildGraphQLSchema({
   queryFields._meta = {
     type: GraphQLMeta,
     resolve: async (_source, _args, context) => {
-      const status = await context.metadataStore.getStatus();
+      const status = await context.getStatus();
       return { status };
     },
   };
@@ -743,7 +746,7 @@ const conditionSuffixesByLengthDesc = Object.values(conditionSuffixes)
 function buildWhereConditions(
   where: Record<string, any> | undefined,
   columns: Record<string, Column>,
-): (SQL | undefined)[] {
+) {
   const conditions: (SQL | undefined)[] = [];
 
   if (where === undefined) return conditions;
@@ -806,7 +809,11 @@ function buildWhereConditions(
             ),
           );
         } else {
-          conditions.push(eq(column, rawValue));
+          if (rawValue === null) {
+            conditions.push(isNull(column));
+          } else {
+            conditions.push(eq(column, rawValue));
+          }
         }
         break;
       case "_not":
@@ -820,7 +827,11 @@ function buildWhereConditions(
             ),
           );
         } else {
-          conditions.push(ne(column, rawValue));
+          if (rawValue === null) {
+            conditions.push(isNotNull(column));
+          } else {
+            conditions.push(ne(column, rawValue));
+          }
         }
         break;
       case "_in":
@@ -991,13 +1002,37 @@ export function buildDataLoaderCache({
             limit: encodedIds.length,
           });
 
-          return decodedRowFragments.map((decodedRowFragment) => {
-            return rows.find((row) =>
-              Object.entries(decodedRowFragment).every(
-                ([col, val]) => row[col] === val,
-              ),
-            );
-          });
+          // Now, we need to order the rows coming out of the database to match
+          // the order of the IDs passed in. To accomplish this, we need to do
+          // a comparison of the decoded row PK fragments with the database rows.
+          // This is tricky because the decoded row PK fragments are not normalized,
+          // so some comparisons will fail (eg for our PgHex column type).
+          // To fix this, we need to normalize the values before doing the comparison.
+          return (
+            decodedRowFragments
+              // Normalize the decoded row fragments
+              .map((fragment) =>
+                Object.fromEntries(
+                  Object.entries(fragment).map(([col, val]) => {
+                    const column = table.columns[col];
+                    if (column === undefined) {
+                      throw new Error(
+                        `Unknown column '${table.tsName}.${col}' used in dataloader row ID fragment`,
+                      );
+                    }
+                    return [col, normalizeColumn(column, val, false)];
+                  }),
+                ),
+              )
+              // Find the database row corresponding to each normalized row fragment
+              .map((fragment) =>
+                rows.find((row) =>
+                  Object.entries(fragment).every(
+                    ([col, val]) => row[col] === val,
+                  ),
+                ),
+              )
+          );
         },
         { maxBatchSize: 1_000 },
       );

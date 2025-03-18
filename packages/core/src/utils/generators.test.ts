@@ -1,4 +1,4 @@
-import { promiseWithResolvers } from "@ponder/common";
+import { promiseWithResolvers } from "@/utils/promiseWithResolvers.js";
 import { expect, test } from "vitest";
 import { bufferAsyncGenerator, mergeAsyncGenerators } from "./generators.js";
 
@@ -67,16 +67,14 @@ test("mergeAsyncGenerators() yields all results", async () => {
 
   p1.resolve(1);
   p2.resolve(2);
-  await new Promise((res) => setTimeout(res));
   p3.resolve(3);
   p4.resolve(4);
-  await new Promise((res) => setTimeout(res));
 
   lock.resolve();
 
   await new Promise((res) => setTimeout(res));
 
-  expect(results).toStrictEqual([1, 2, 3, 4]);
+  expect(results).toStrictEqual([1, 3, 2, 4]);
 });
 
 test("bufferAsyncGenerator() prefetches results", async () => {
